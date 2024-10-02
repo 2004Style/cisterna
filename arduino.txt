@@ -1,0 +1,22 @@
+pines para los sensores en arduino
+- sensor de ultrasonido delantero
+gnd
+vcc
+echo
+triger
+- sensor de ultrasonido trasero
+gnd
+vcc
+echo
+triger
+- sensor de humedad
+gnd
+vcc
+analog
+- sensor de temperatura
+gnd
+vcc
+analog
+- sensor de luz
+gnd
+analog
