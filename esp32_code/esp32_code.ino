@@ -33,17 +33,27 @@ int ServoHumedad = 4;
 // Variables para controlar el robot
 String Direccion_robot = "STOP";
 String Direccion_torreta = "STOP";
-String Luces_frontales = "OFF";
+String Luces_frontales = "LF_OFF";
 String Luces_traseras = "OFF";
 String Luces_intermitentes = "OFF";
+String Estado_humedad = "H_OFF";
 
 //variables de datos desde arduino
+String DistanciaFront = "0";
+String DistanciaBack = "0";
 
+int LDRX1 = 0;
+int LDRX2 = 0;
+int LDRY1 = 0;
+int LDRY2 = 0;
+
+int Humedad = 0;
 
 // Prototipos de las funciones de las tareas
 void TaskIntermitentes(void *pvParameters);
 void TaskLucesDelanteras(void *pvParameters);
 void TaskTorreta(void *pvParameters);
+void TaskHumedad(void *pvParameters);
 void TaskTanque(void *pvParameters);
 void TaskComunicacionArduino(void *pvParameters);
 
@@ -89,10 +99,11 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // Crear tareas para cada función de control
-  
+
   xTaskCreatePinnedToCore(TaskIntermitentes, "Intermitentes", 1000, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(TaskLucesDelanteras, "LucesDelanteras", 1000, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(TaskTorreta, "Torreta", 1000, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(TaskHumedad, "EnviarArduino", 1000, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(TaskTanque, "Tanque", 1000, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(TaskComunicacionArduino, "ComunicacionArduino", 2048, NULL, 1, NULL, 0);
 }
@@ -103,12 +114,13 @@ void loop() {
   if (client) {
     Serial.println("Cliente conectado");
     client.println("Conectado con el robot");
+    //client.println("EsMotor=" + String(Humedad) + "EsHumedad=" + String(Humedad) + "EsRieg" + String(Humedad));
 
     while (client.connected()) {
       if (client.available()) {
         String data = client.readStringUntil('\n');
         data.trim();
-        
+
         if (data.startsWith("Direccion_robot=")) {
           Direccion_robot = data.substring(strlen("Direccion_robot="));
           Serial.print("Robot: ");
@@ -129,13 +141,11 @@ void loop() {
           Luces_intermitentes = data.substring(strlen("Luces_intermitentes="));
           Serial.print("Luces Intermitentes: ");
           Serial.println(Luces_intermitentes);
-        }/*
-        else if (data.startsWith("Sensor_Humedad="))
-        {
-          Luces_intermitentes = data.substring(strlen("Sensor_Humedad="));
-          Serial.print("Luces Intermitentes: ");
-          Serial.println(Luces_intermitentes);
-        }*/
+        } else if (data.startsWith("Estado_humedad=")) {
+          Estado_humedad = data.substring(strlen("Estado_humedad="));
+          Serial.print("Sensor Humedad: ");
+          Serial.println(Estado_humedad);
+        }
       }
     }
     // Cierra la conexión
@@ -219,8 +229,15 @@ void TaskTorreta(void *pvParameters) {
   }
 }
 
-String DistanciaFront = "0";
-String DistanciaBack = "0";
+//funciona para activar el servo para abjar el sensor de humedad y tambien apra enviar datos para activar el sensor de humedad en arduino
+void TaskHumedad(void *pvParameters) {
+  while (true) {
+    Serial2.println(Estado_humedad);
+    delay(1500);
+  }
+}
+
+
 // Función para manejar el tanque
 void TaskTanque(void *pvParameters) {
   while (true) {
@@ -265,20 +282,9 @@ void TaskTanque(void *pvParameters) {
   }
 }
 
-
-int LDRX1 = 0;
-int LDRX2 = 0;
-int LDRY1 = 0;
-int LDRY2 = 0;
-
-int Humedad = 0;
-
-void TaskComunicacionArduino(void *pvParameters)
-{
-  while (true)
-  {
-    if (Serial2.available())
-    {
+void TaskComunicacionArduino(void *pvParameters) {
+  while (true) {
+    if (Serial2.available()) {
       String datos = Serial2.readStringUntil('\n');
       Serial.println(datos);
 
@@ -290,23 +296,19 @@ void TaskComunicacionArduino(void *pvParameters)
       DistanciaFront = String(extraerValor(datos, "UF:"));
       DistanciaBack = String(extraerValor(datos, "UB:"));
       Humedad = extraerValor(datos, "LH:");
-
     }
     delay(500);
   }
 }
 
-int extraerValor(String datos, String identificador)
-{
+int extraerValor(String datos, String identificador) {
   int startIndex = datos.indexOf(identificador);
-  if (startIndex == -1)
-  {
+  if (startIndex == -1) {
     return 0;
   }
   startIndex += identificador.length();
   int endIndex = datos.indexOf(' ', startIndex);
-  if (endIndex == -1)
-  {
+  if (endIndex == -1) {
     endIndex = datos.length();
   }
   return datos.substring(startIndex, endIndex).toInt();

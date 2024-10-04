@@ -15,7 +15,6 @@ int SensorHumedad = A4;
 bool humedadActiva = false;  // Flag para controlar el sensor de humedad
 
 // Variables de tiempo para cada sensor
-
 unsigned long previousMillisUltrasonidoFrontal = 0;
 unsigned long previousMillisUltrasonidoTrasero = 0;
 unsigned long previousMillisLDR = 0;
@@ -23,11 +22,11 @@ unsigned long previousMillisHumedad = 0;
 unsigned long previousMillisEnviar = 0;
 unsigned long previousMillisRecepcion = 0;
 
-const long intervalUltrasonidoFrontal = 1000;
-const long intervalUltrasonidoTrasero = 1000;
+const long intervalUltrasonidoFrontal = 500;
+const long intervalUltrasonidoTrasero = 500;
 const long intervalLDR = 1000;
-const long intervalHumedad = 1000;
-const long intervalRecepcion = 1000;
+const long intervalHumedad = 500;
+const long intervalRecepcion = 500;
 const long intervalEnviar = 1000;
 
 long DistanciaFrontal = 0;
@@ -56,6 +55,16 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
+  // Leer datos recibidos desde el ESP32 de manera asíncrona cada 1 segundo
+  if (currentMillis - previousMillisRecepcion >= intervalRecepcion) {
+    previousMillisRecepcion = currentMillis;
+    if (Serial.available()) {
+      String datosRecibidos = Serial.readStringUntil('\n');  // Lee datos hasta el salto de línea
+      //Serial.println(datosRecibidos);
+      String Humedad_Obtenida_esp32 = datosRecibidos;
+      Serial.println(Humedad_Obtenida_esp32);
+    }
+  }
 
   // Leer el sensor de ultrasonido frontal cada 1 segundo
   if (currentMillis - previousMillisUltrasonidoFrontal >= intervalUltrasonidoFrontal) {
@@ -81,11 +90,7 @@ void loop() {
     int LecturaHumedad = analogRead(SensorHumedad);
   }
 
-  // Leer datos recibidos desde el ESP32 de manera asíncrona cada 1 segundo
-  if (currentMillis - previousMillisRecepcion >= intervalRecepcion) {
-    previousMillisRecepcion = currentMillis;
-    leerDatosESP32();
-  }
+
   // enviar los datos al ESP32 cada 1 segundo
   if (currentMillis - previousMillisEnviar >= intervalEnviar) {
     previousMillisEnviar = currentMillis;
@@ -113,23 +118,4 @@ void leerLDRs() {
   LDRX2Value = analogRead(LDRX2);
   LDRY1Value = analogRead(LDRY1);
   LDRY2Value = analogRead(LDRY2);
-}
-
-// Función para leer datos enviados desde el ESP32
-void leerDatosESP32() {
-  if (Serial.available() > 0) {
-    String datosRecibidos = Serial.readStringUntil('\n');  // Lee datos hasta el salto de línea
-    Serial.println("Datos recibidos del ESP32: " + datosRecibidos);
-
-    // Verificar si el comando recibido es "lectorDeHumedadActivo"
-    if (datosRecibidos == "lectorDeHumedadActivo") {
-      humedadActiva = true;
-      Serial.println("Sensor de humedad activado.");
-    }
-    // Verificar si el comando recibido es "lectorDeHumedadInactivo"
-    else if (datosRecibidos == "lectorDeHumedadInactivo") {
-      humedadActiva = false;
-      Serial.println("Sensor de humedad desactivado.");
-    }
-  }
 }
