@@ -2,9 +2,10 @@
 
 // Definición de variables
 const char *ssid = "ConvertSystems";
-//const char *password = "style1234";
+// const char *password = "style1234";
+const int tcpPort = 80; // Puerto para el servidor TCP
 
-WiFiServer server(80);
+WiFiServer server(tcpPort);
 
 //variables para los componentes fisicos del robot
 int ElectroBomba = 26;
@@ -97,6 +98,8 @@ void setup() {
   Serial.println("Servidor iniciado");
   Serial.print("Dirección IP: ");
   Serial.println(WiFi.localIP());
+  Serial.print(" Port: ");
+  Serial.println(tcpPort);
 
   // Crear tareas para cada función de control
 
