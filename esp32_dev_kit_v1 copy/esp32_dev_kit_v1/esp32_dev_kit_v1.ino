@@ -1,20 +1,34 @@
 #include <WiFi.h>
+//#include <ESP32Servo360.h>
+#include <ESP32Servo.h>
 
 // Definición de variables
 const char *ssid = "ConvertSystems";
 // const char *password = "style1234";
-const int tcpPort = 80; // Puerto para el servidor TCP
+const int tcpPort = 80;  // Puerto para el servidor TCP
 
 WiFiServer server(tcpPort);
 
 //variables para los componentes fisicos del robot
 int ElectroBomba = 26;
 
-int ServoTorretaEjeY = 18;
-int ServoTorretaEjeX = 5;
+Servo servoTorretaX;
+Servo servoTorretaY;
+int gradosX = 0;
+int gradosY = 0;
+const int MAX_GRADOS = 29;
 
-int ServoPanelEjeY = 15;
-int ServoPanelEjeX = 2;
+Servo ServoPanelX;
+Servo ServoPanelY;
+// Umbrales para controlar el movimiento
+const int UMBRAL_SUPERIOR = 100;  // Umbral superior para empezar el movimiento
+const int UMBRAL_INFERIOR = 50;   // Umbral inferior para detener el movimiento
+int diffX, diffY;                 // Diferencias entre los LDRs
+
+// Posiciones del servo
+const int POS_DERECHA = 180;
+const int POS_IZQUIERDA = 0;
+const int POS_CENTRO = 90;
 
 int LucesFrontales = 27;
 int LucesTraseras = 14;
@@ -57,18 +71,13 @@ void TaskTorreta(void *pvParameters);
 void TaskHumedad(void *pvParameters);
 void TaskTanque(void *pvParameters);
 void TaskComunicacionArduino(void *pvParameters);
+void TaskSeguirLuz(void *pvParameters);
 
 void setup() {
   Serial.begin(115200);
   Serial2.begin(9600, SERIAL_8N1, 16, 17);
 
   pinMode(ElectroBomba, OUTPUT);
-
-  pinMode(ServoTorretaEjeY, OUTPUT);
-  pinMode(ServoTorretaEjeX, OUTPUT);
-
-  pinMode(ServoPanelEjeY, OUTPUT);
-  pinMode(ServoPanelEjeX, OUTPUT);
 
   pinMode(LucesFrontales, OUTPUT);
   pinMode(LucesTraseras, OUTPUT);
@@ -84,6 +93,11 @@ void setup() {
 
   pinMode(ServoHumedad, OUTPUT);
 
+  servoTorretaX.attach(18);
+  servoTorretaY.attach(5);
+  ServoPanelX.attach(2);
+  ServoPanelY.attach(15);
+
   // Conexión a la red Wi-Fi
   //WiFi.begin(ssid, password);
   WiFi.begin(ssid);
@@ -97,7 +111,7 @@ void setup() {
   server.begin();
   Serial.println("Servidor iniciado");
   Serial.print("Dirección IP: ");
-  Serial.println(WiFi.localIP());
+  Serial.print(WiFi.localIP());
   Serial.print(" Port: ");
   Serial.println(tcpPort);
 
@@ -109,6 +123,7 @@ void setup() {
   xTaskCreatePinnedToCore(TaskHumedad, "EnviarArduino", 1000, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(TaskTanque, "Tanque", 1000, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(TaskComunicacionArduino, "ComunicacionArduino", 2048, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(TaskSeguirLuz, "TaskSeguirLuz", 1000, NULL, 1, NULL, 0);
 }
 
 void loop() {
@@ -194,12 +209,11 @@ void IntermitentesEmergencia() {
   Serial.println("Emergencia");
   digitalWrite(IntermitentesDerechos, HIGH);
   digitalWrite(IntermitentesIzquierdos, HIGH);
-  delay(500);
+  delay(2000);
   digitalWrite(IntermitentesDerechos, LOW);
   digitalWrite(IntermitentesIzquierdos, LOW);
-  delay(300);
+  delay(2000);
 }
-
 // Función para manejar las luces delanteras
 void TaskLucesDelanteras(void *pvParameters) {
   while (true) {
@@ -219,17 +233,88 @@ void TaskTorreta(void *pvParameters) {
   while (true) {
     if (Direccion_torreta == "T_up") {
       Serial.println("La torreta se mueve hacia arriba");
+      MoverServo(servoTorretaY, 180, gradosY, true);
     } else if (Direccion_torreta == "T_down") {
       Serial.println("La torreta se mueve hacia abajo");
+      MoverServo(servoTorretaY, 0, gradosY, false);
     } else if (Direccion_torreta == "T_left") {
       Serial.println("La torreta se mueve hacia la izquierda");
+      MoverServo(servoTorretaX, 0, gradosX, false);
     } else if (Direccion_torreta == "T_right") {
       Serial.println("La torreta se mueve hacia la derecha");
+      MoverServo(servoTorretaX, 180, gradosX, true);
+    } else if (Direccion_torreta == "T_reset") {
+      Serial.println("La torreta se reinicia su posicion");
+      Reset();
     } else {
       //Serial.println("La torreta no se mueve");
+      DetenerServo(servoTorretaY);
+      DetenerServo(servoTorretaX);
     }
     delay(200);
   }
+}
+// Función genérica para mover un servo
+void MoverServo(Servo &servo, int direccion, int &grados, bool sentidoHorario) {
+  servo.write(direccion);  // Mover el servo en la dirección especificada
+
+  // Actualizar los grados en función del sentido de rotación
+  if (sentidoHorario) {
+    grados++;
+  } else {
+    grados--;
+  }
+
+  // Controlar los límites de grados
+  ControlarGrados(grados);
+
+  // Mostrar información por consola
+  Serial.print("Grados: ");
+  Serial.println(grados);
+
+  delay(100);  // Ajusta el tiempo de delay según sea necesario
+}
+
+// Controlar si los grados están dentro del límite
+void ControlarGrados(int &grados) {
+  if (grados > MAX_GRADOS) {
+    grados = 0;
+    Serial.println("Grados superados, reiniciando a 0.");
+  } else if (grados < 0) {
+    grados = MAX_GRADOS;
+    Serial.println("Grados negativos, ajustando a máximo.");
+  }
+}
+
+// Restablecer posición de los servos
+void Reset() {
+  Serial.println("Restableciendo posición de servomotores...");
+  Serial.print("Posición actual del eje X: ");
+  Serial.println(gradosX);
+  Serial.print("Posición actual del eje Y: ");
+  Serial.println(gradosY);
+
+  // Restablecer eje Y (servoY)
+  while (gradosY > 0) {
+    servoTorretaY.write(0);  // Mover hacia abajo (sentido antihorario)
+    gradosY--;
+    Serial.println(gradosY);
+  }
+  DetenerServo(servoTorretaY);
+
+  // Restablecer eje X (servoX)
+  while (gradosX > 0) {
+    servoTorretaX.write(0);  // Mover hacia izquierda (sentido antihorario)
+    gradosX--;
+    Serial.println(gradosX);
+  }
+  DetenerServo(servoTorretaX);
+}
+
+// Detener el servo en la posición neutral
+void DetenerServo(Servo &servo) {
+  //Serial.println("Deteniendo servomotor...");
+  servo.write(90);  // Detener el servo (posición neutral)
 }
 
 //funciona para activar el servo para abjar el sensor de humedad y tambien apra enviar datos para activar el sensor de humedad en arduino
@@ -244,17 +329,14 @@ void TaskHumedad(void *pvParameters) {
 // Función para manejar el tanque
 void TaskTanque(void *pvParameters) {
   while (true) {
-    if (Direccion_robot == "R_Forward" && DistanciaFront >= "20") 
-    {
+    if (Direccion_robot == "R_Forward" && DistanciaFront != "20") {
       Serial.println("El robot se mueve hacia adelante");
       digitalWrite(LucesTraseras, LOW);
       digitalWrite(MotorDireccionDerecha1, HIGH);
       digitalWrite(MotorDireccionDerecha2, LOW);
       digitalWrite(MotorDireccionIzquierda1, HIGH);
       digitalWrite(MotorDireccionIzquierda2, LOW);
-    }
-    else if (Direccion_robot == "R_Back" && DistanciaBack >= "20")
-    {
+    } else if (Direccion_robot == "R_Back" && DistanciaBack != "20") {
       Serial.println("luces encendidas");
       digitalWrite(LucesTraseras, HIGH);
       Serial.println("El robot se mueve hacia atrás");
@@ -262,27 +344,21 @@ void TaskTanque(void *pvParameters) {
       digitalWrite(MotorDireccionDerecha2, HIGH);
       digitalWrite(MotorDireccionIzquierda1, LOW);
       digitalWrite(MotorDireccionIzquierda2, HIGH);
-    }
-    else if (Direccion_robot == "R_Right")
-    {
+    } else if (Direccion_robot == "R_Right") {
       Serial.println("El robot se mueve hacia la derecha");
       digitalWrite(LucesTraseras, LOW);
       digitalWrite(MotorDireccionDerecha1, HIGH);
       digitalWrite(MotorDireccionDerecha2, LOW);
       digitalWrite(MotorDireccionIzquierda1, LOW);
       digitalWrite(MotorDireccionIzquierda2, HIGH);
-    }
-    else if (Direccion_robot == "R_Left")
-    {
+    } else if (Direccion_robot == "R_Left") {
       Serial.println("El robot se mueve hacia la izquierda");
       digitalWrite(LucesTraseras, LOW);
       digitalWrite(MotorDireccionDerecha1, LOW);
       digitalWrite(MotorDireccionDerecha2, HIGH);
       digitalWrite(MotorDireccionIzquierda1, HIGH);
       digitalWrite(MotorDireccionIzquierda2, LOW);
-    }
-    else
-    {
+    } else {
       //Serial.println("El robot no se mueve");
       digitalWrite(LucesTraseras, LOW);
       digitalWrite(MotorDireccionDerecha1, LOW);
@@ -308,6 +384,10 @@ void TaskComunicacionArduino(void *pvParameters) {
       DistanciaFront = String(extraerValor(datos, "UF:"));
       DistanciaBack = String(extraerValor(datos, "UB:"));
       Humedad = extraerValor(datos, "LH:");
+
+      // Calcular diferencias
+      diffX = LDRX1 - LDRX2;
+      diffY = LDRY1 - LDRY2;
     }
     delay(500);
   }
@@ -324,4 +404,38 @@ int extraerValor(String datos, String identificador) {
     endIndex = datos.length();
   }
   return datos.substring(startIndex, endIndex).toInt();
+}
+
+/*
+controlarServoPanel(ServoPanelX, diffX, "X");
+controlarServoPanel(ServoPanelY, diffY, "Y");*/
+// Función para controlar el movimiento de los servos
+void TaskSeguirLuz(void *pvParameters) {
+  while (true) {
+    controlarServoPanel(ServoPanelX, diffX, "X");
+    controlarServoPanel(ServoPanelY, diffY, "Y");
+    delay(1000);
+  }
+}
+
+void controlarServoPanel(Servo &servo, int diferencia, const char *eje) {
+  if (diferencia > UMBRAL_SUPERIOR) {
+    // Mover en una dirección (derecha o abajo)
+    servo.write(POS_DERECHA);
+    Serial.print("Moviendo servo ");
+    Serial.print(eje);
+    Serial.println(" hacia la derecha/abajo");
+  } else if (diferencia < -UMBRAL_SUPERIOR) {
+    // Mover en la dirección opuesta (izquierda o arriba)
+    servo.write(POS_IZQUIERDA);
+    Serial.print("Moviendo servo ");
+    Serial.print(eje);
+    Serial.println(" hacia la izquierda/arriba");
+  } else if (abs(diferencia) < UMBRAL_INFERIOR) {
+    // Detener el servo
+    servo.write(POS_CENTRO);
+    //Serial.print("Deteniendo servo ");
+    //Serial.print(eje);
+    //Serial.println(" en posición central");
+  }
 }

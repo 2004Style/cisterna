@@ -51,7 +51,7 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.frame_size = FRAMESIZE_SVGA;// Tamaños disponibles:
+  config.frame_size = FRAMESIZE_QVGA;// Tamaños disponibles:
   // FRAMESIZE_96X96, // 96x96
   // FRAMESIZE_QQVGA, // 160x120
   // FRAMESIZE_QVGA,  // 320x240
@@ -67,15 +67,15 @@ void setup() {
   // FRAMESIZE_4K,    // 3840x2160
   config.pixel_format = PIXFORMAT_JPEG;  // Para streaming en formato JPEG
   config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.jpeg_quality = 10; // Calidad del JPEG
+  config.jpeg_quality = 12; // Calidad del JPEG
   config.fb_count = 3;
 
   if (psramFound()) {
-    config.jpeg_quality = 10;
+    config.jpeg_quality = 12;
     config.fb_count = 3;
     config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
-    config.frame_size = FRAMESIZE_SVGA;
+    config.frame_size = FRAMESIZE_QVGA;
     config.fb_location = CAMERA_FB_IN_DRAM;
   }
 
